@@ -34,14 +34,25 @@ namespace Ais.Net.Receiver.Receiver
 
         public IObservable<IAisMessage> Messages => this.messages;
 
-        public Task StartAsync(CancellationToken cancellationToken = default)
+        public async Task StartAsync(CancellationToken cancellationToken = default)
         {
-            return Retriable.RetryAsync(() =>
-                        this.StartAsyncInternal(cancellationToken),
-                        cancellationToken,
-                        new Backoff(maxTries: 100, deltaBackoff: TimeSpan.FromSeconds(5)),
-                        new AnyExceptionPolicy(),
-                        false);
+            try
+            {
+                await Retriable.RetryAsync(() =>
+                            this.StartAsyncInternal(cancellationToken),
+                            cancellationToken,
+                            new Backoff(maxTries: 100, deltaBackoff: TimeSpan.FromSeconds(5)),
+                            new AnyExceptionPolicy(),
+                            false);
+            }
+            catch (OperationCanceledException)
+            {
+                // We need this to enable flushing out of any messages that were being added to the next
+                // batch but which hadn't gone out yet at shutdown. However, it does mean that once we're
+                // done, our subject
+                this.sentences.OnCompleted();
+                this.messages.OnCompleted();
+            }
         }
 
         private async Task StartAsyncInternal(CancellationToken cancellationToken = default)
